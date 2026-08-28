@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from . import __version__
 from .blueprint import build_blueprint
 from .capsule import create_capsule, list_capsules
-from .diff import diff_capsule
-from .drift import check_source_drift
 from .export_prompt import export_iteration_prompt
 from .freeze import freeze_project
 from .init_project import init_project
@@ -33,6 +34,27 @@ MIME_YAML = "application/yaml"
 
 
 ToolHandler = Callable[[Path, dict[str, Any]], Any]
+_MAX_STEPS = 100
+_MAX_RESULT_CHARS = 50_000
+_MCP_PROMOTE_ENV = "NEXU_MCP_ALLOW_PROMOTE"
+
+
+def _bounded_steps(arguments: dict[str, Any], *, default: int) -> int:
+    return max(1, min(int(arguments.get("steps") or default), _MAX_STEPS))
+
+
+def _approval_hash(action: str, payload: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        {"action": action, "payload": payload},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _promotion_enabled() -> bool:
+    return os.getenv(_MCP_PROMOTE_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 TOOL_SPECS: list[dict[str, Any]] = [
@@ -59,7 +81,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "nexu_capsule_create",
-        "description": "Create an isolated project capsule from selected files, routes and endpoints.",
+        "description": (
+            "Create an isolated project capsule from selected files, routes and endpoints."
+        ),
         "inputSchema": _schema(
             {
                 "name": {"type": "string"},
@@ -89,7 +113,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "nexu_capsule_status",
-        "description": "Return capsule status, latest iteration, diff counters and verification summary.",
+        "description": (
+            "Return capsule status, latest iteration, diff counters and verification summary."
+        ),
         "inputSchema": _schema({"name": {"type": "string"}}, ["name"]),
         "handler": lambda root, args: capsule_status(root, str(args["name"])),
     },
@@ -99,7 +125,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "inputSchema": _schema(
             {
                 "name": {"type": "string"},
-                "steps": {"type": "integer", "default": 10},
+                "steps": {"type": "integer", "minimum": 1, "maximum": _MAX_STEPS, "default": 10},
                 "goal": {"type": "string", "default": ""},
             },
             ["name"],
@@ -107,13 +133,15 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "handler": lambda root, args: build_iteration_plan(
             root,
             str(args["name"]),
-            steps=int(args.get("steps") or 10),
+            steps=_bounded_steps(args, default=10),
             goal=str(args.get("goal") or ""),
         ),
     },
     {
         "name": "nexu_capsule_blueprint",
-        "description": "Generate UI/API/test blueprint from capsule selection and Intract contracts.",
+        "description": (
+            "Generate UI/API/test blueprint from capsule selection and Intract contracts."
+        ),
         "inputSchema": _schema({"name": {"type": "string"}}, ["name"]),
         "handler": lambda root, args: build_blueprint(root, str(args["name"])),
     },
@@ -123,7 +151,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "inputSchema": _schema(
             {
                 "name": {"type": "string"},
-                "steps": {"type": "integer", "default": 1},
+                "steps": {"type": "integer", "minimum": 1, "maximum": _MAX_STEPS, "default": 1},
                 "goal": {"type": "string", "default": "Evolve capsule safely."},
             },
             ["name"],
@@ -132,18 +160,20 @@ TOOL_SPECS: list[dict[str, Any]] = [
             "created": iterate_capsule(
                 root,
                 str(args["name"]),
-                steps=int(args.get("steps") or 1),
+                steps=_bounded_steps(args, default=1),
                 goal=str(args.get("goal") or "Evolve capsule safely."),
             )
         },
     },
     {
         "name": "nexu_capsule_orchestrate",
-        "description": "Build offline or LLM-assisted orchestration plan for safe capsule evolution.",
+        "description": (
+            "Build offline or LLM-assisted orchestration plan for safe capsule evolution."
+        ),
         "inputSchema": _schema(
             {
                 "name": {"type": "string"},
-                "steps": {"type": "integer", "default": 10},
+                "steps": {"type": "integer", "minimum": 1, "maximum": _MAX_STEPS, "default": 10},
                 "goal": {"type": "string", "default": ""},
                 "call_llm": {"type": "boolean", "default": False},
                 "model": {"type": "string"},
@@ -153,7 +183,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "handler": lambda root, args: build_capsule_orchestration(
             root,
             str(args["name"]),
-            steps=int(args.get("steps") or 10),
+            steps=_bounded_steps(args, default=10),
             goal=str(args.get("goal") or ""),
             call_llm=bool(args.get("call_llm", False)),
             model=args.get("model"),
@@ -161,7 +191,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "nexu_capsule_export_prompt",
-        "description": "Export an LLM-ready iteration prompt constrained by contracts and blueprint.",
+        "description": (
+            "Export an LLM-ready iteration prompt constrained by contracts and blueprint."
+        ),
         "inputSchema": _schema(
             {"name": {"type": "string"}, "iteration": {"type": "string"}}, ["name"]
         ),
@@ -185,7 +217,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "nexu_capsule_review",
-        "description": "Build evidence-based review packet. LLM review is optional and disabled by default.",
+        "description": (
+            "Build evidence-based review packet. LLM review is optional and disabled by default."
+        ),
         "inputSchema": _schema(
             {
                 "name": {"type": "string"},
@@ -217,17 +251,97 @@ TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "nexu_capsule_promote_apply",
-        "description": "Build and immediately apply the promotion plan to the source project, copying modified files.",
-        "inputSchema": _schema({"name": {"type": "string"}}, ["name"]),
-        "handler": lambda root, args: _apply_promotion_from_mcp(root, str(args["name"])),
+        "description": "Apply an exact promotion plan after actor-bound hash approval.",
+        "inputSchema": _schema(
+            {
+                "name": {"type": "string"},
+                "actor": {"type": "string", "description": "Human or system approving the change."},
+                "approval_hash": {
+                    "type": "string",
+                    "description": (
+                        "Exact hash returned by the preceding approval-required response."
+                    ),
+                },
+            },
+            ["name"],
+        ),
+        "handler": lambda root, args: _apply_promotion_from_mcp(
+            root,
+            str(args["name"]),
+            actor=str(args.get("actor") or ""),
+            approval_hash=str(args.get("approval_hash") or ""),
+        ),
     },
 ]
 
-def _apply_promotion_from_mcp(root: Path, name: str) -> dict[str, str]:
-    from .promote import build_promotion_plan, apply_promotion_plan
+
+def _promotion_approval_payload(root: Path, plan: dict[str, Any]) -> dict[str, Any]:
+    from .paths import capsule_dir
+
+    base = capsule_dir(root, str(plan["capsule"]))
+    files: list[dict[str, str]] = []
+    for item in plan.get("promotion_map", []):
+        source = base / str(item["capsule_path"])
+        content_hash = hashlib.sha256(source.read_bytes()).hexdigest() if source.is_file() else ""
+        files.append(
+            {
+                "capsule_path": str(item["capsule_path"]),
+                "target_path": str(item["target_path"]),
+                "content_sha256": content_hash,
+            }
+        )
+    return {
+        "capsule": str(plan["capsule"]),
+        "source_project_root": str(root.resolve()),
+        "files": files,
+    }
+
+
+def _apply_promotion_from_mcp(
+    root: Path,
+    name: str,
+    *,
+    actor: str = "",
+    approval_hash: str = "",
+) -> dict[str, Any]:
+    from .promote import apply_promotion_plan, build_promotion_plan
+
     plan = build_promotion_plan(root, name)
+    if not plan.get("ready_for_apply"):
+        return {
+            "status": "blocked",
+            "requires_approval": False,
+            "prechecks": plan.get("prechecks", {}),
+            "blocked_by": plan.get("blocked_by", []),
+            "message": "Promotion prechecks failed; fix verification or source drift first.",
+        }
+    payload = _promotion_approval_payload(root, plan)
+    normalized_actor = actor.strip()
+    expected_hash = _approval_hash(
+        "nexu_capsule_promote_apply",
+        {**payload, "actor": normalized_actor},
+    )
+    if not _promotion_enabled() or not normalized_actor or approval_hash.strip() != expected_hash:
+        return {
+            "status": "approval_required",
+            "requires_approval": True,
+            "approval_hash": expected_hash,
+            "approval_payload": payload,
+            "required_env": _MCP_PROMOTE_ENV,
+            "message": (
+                f"Review the exact file hashes, enable {_MCP_PROMOTE_ENV}=1, then repeat "
+                "with actor and approval_hash."
+            ),
+        }
     apply_promotion_plan(root, plan)
-    return {"status": "success", "message": f"Applied promotion plan for capsule {name}"}
+    return {
+        "status": "success",
+        "requires_approval": False,
+        "approved_by": normalized_actor,
+        "approval_hash": expected_hash,
+        "files_applied": len(payload["files"]),
+        "message": f"Applied promotion plan for capsule {name}",
+    }
 
 
 MCP_TOOLS: list[dict[str, Any]] = [
@@ -235,16 +349,15 @@ MCP_TOOLS: list[dict[str, Any]] = [
 ]
 
 
-TOOL_HANDLERS: dict[str, ToolHandler] = {
-    str(spec["name"]): spec["handler"] for spec in TOOL_SPECS
-}
+TOOL_HANDLERS: dict[str, ToolHandler] = {str(spec["name"]): spec["handler"] for spec in TOOL_SPECS}
+
+
+def _bind_tool(root: Path, handler: ToolHandler) -> Callable[[dict[str, Any]], Any]:
+    return lambda arguments: handler(root, arguments)
 
 
 def _tool_map(root: Path) -> dict[str, Callable[[dict[str, Any]], Any]]:
-    return {
-        name: (lambda handler: (lambda args: handler(root, args)))(handler)
-        for name, handler in TOOL_HANDLERS.items()
-    }
+    return {name: _bind_tool(root, handler) for name, handler in TOOL_HANDLERS.items()}
 
 
 def call_tool(root: Path, tool_name: str, arguments: dict[str, Any] | None = None) -> Any:
@@ -255,13 +368,18 @@ def call_tool(root: Path, tool_name: str, arguments: dict[str, Any] | None = Non
 
 
 def _result_content(data: Any) -> dict[str, Any]:
+    text = json.dumps(data, indent=2, ensure_ascii=False, default=str)
+    truncated = len(text) > _MAX_RESULT_CHARS
+    if truncated:
+        text = text[:_MAX_RESULT_CHARS] + "\n... MCP response truncated ..."
     return {
         "content": [
             {
                 "type": "text",
-                "text": json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                "text": text,
             }
-        ]
+        ],
+        "truncated": truncated,
     }
 
 
@@ -287,7 +405,11 @@ def _read_resource(root: Path, uri: str) -> dict[str, Any]:
         text = path.read_text(encoding="utf-8") if path.exists() else ""
         return {"contents": [{"uri": uri, "mimeType": MIME_YAML, "text": text}]}
     if uri == "nexu://capsules":
-        return {"contents": [{"uri": uri, "mimeType": MIME_JSON, "text": json.dumps(list_capsules(root))}]}
+        return {
+            "contents": [
+                {"uri": uri, "mimeType": MIME_JSON, "text": json.dumps(list_capsules(root))}
+            ]
+        }
     prefix = "nexu://capsules/"
     if uri.startswith(prefix) and uri.endswith("/status"):
         name = uri[len(prefix) : -len("/status")]
@@ -324,7 +446,8 @@ def _prompt_get(name: str, arguments: dict[str, Any] | None = None) -> dict[str,
                     "type": "text",
                     "text": (
                         f"Work only inside nexu capsule `{capsule}`. Goal: {goal}. "
-                        "Preserve Intract contracts, leave evidence for outputs, and run verification before promotion."
+                        "Preserve Intract contracts, leave evidence for outputs, and run "
+                        "verification before promotion."
                     ),
                 },
             }
@@ -350,7 +473,9 @@ def _rpc_handlers(root: Path) -> dict[str, Callable[[dict[str, Any]], dict[str, 
         "resources/list": lambda params: {"resources": _resource_list(root)},
         "resources/read": lambda params: _read_resource(root, str(params.get("uri"))),
         "prompts/list": lambda params: {"prompts": _prompts_list()},
-        "prompts/get": lambda params: _prompt_get(str(params.get("name")), params.get("arguments") or {}),
+        "prompts/get": lambda params: _prompt_get(
+            str(params.get("name")), params.get("arguments") or {}
+        ),
         "ping": lambda params: {},
     }
 
@@ -365,7 +490,11 @@ def handle_mcp_message(root: Path, message: dict[str, Any]) -> dict[str, Any] | 
         handlers = _rpc_handlers(root)
         handler = handlers.get(str(method))
         if handler is None:
-            return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": -32601, "message": f"Method not found: {method}"}}
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {"code": -32601, "message": f"Method not found: {method}"},
+            }
         result = handler(params)
         return {"jsonrpc": "2.0", "id": msg_id, "result": result}
     except Exception as exc:
@@ -376,7 +505,7 @@ def run_mcp_stdio(root: Path) -> None:
     """Run a minimal MCP-compatible JSON-RPC stdio service.
 
     The implementation exposes tools, resources and prompts without shelling out.
-    It is intentionally conservative: promotion is dry-run only and file operations stay under root.
+    Source promotion requires an actor-bound approval of the exact file hashes.
     """
     for line in sys.stdin:
         line = line.strip()
@@ -385,7 +514,11 @@ def run_mcp_stdio(root: Path) -> None:
         try:
             message = json.loads(line)
         except json.JSONDecodeError as exc:
-            response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(exc)}}
+            response = {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32700, "message": str(exc)},
+            }
         else:
             response = handle_mcp_message(root, message)
         if response is not None:

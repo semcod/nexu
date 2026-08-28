@@ -5,7 +5,8 @@ nexu 0.5 exposes a conservative MCP-compatible stdio service so IDE agents can c
 The service is intentionally limited:
 
 - no shell execution,
-- source-project mutation is limited to the explicit `nexu_capsule_promote_apply` tool,
+- source-file replacement is limited to the explicit `nexu_capsule_promote_apply` tool,
+- promotion requires an actor-bound approval hash for the exact capsule file contents,
 - dry-run promotion planning remains available as `nexu_capsule_promote_plan`,
 - LLM calls remain disabled unless `nexu.yaml` explicitly allows network calls.
 
@@ -81,5 +82,9 @@ Call a tool:
 MCP tools are powerful because an external agent can trigger local operations. Treat `nexu_capsule_promote_apply` as a write-capable operation: expose it only to trusted clients and prefer `nexu_capsule_promote_plan` for review-first workflows.
 
 - `nexu_capsule_promote_plan` creates a review plan only.
+- The first `nexu_capsule_promote_apply` call returns `approval_hash` and does not
+  replace source files. Review `approval_payload`, then repeat the call with a
+  non-empty `actor` and the exact returned hash. The server must also be started
+  with `NEXU_MCP_ALLOW_PROMOTE=1`. Any content change invalidates the hash.
 - `nexu_capsule_orchestrate` uses offline mode unless the project config enables LLM network calls.
 - all operations are rooted under the configured project path.
