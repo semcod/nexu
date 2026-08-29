@@ -243,6 +243,39 @@ def test_call_cinema_html_llm_uses_nexu_yaml_default_model(monkeypatch, tmp_path
     assert captured["model"] == "openrouter/deepseek/deepseek-v4-pro"
 
 
+def test_call_cinema_text_llm_uses_subllm_vision(monkeypatch, tmp_path: Path) -> None:
+    (tmp_path / "nexu.yaml").write_text(
+        "version: nexu.v1\nllm:\n  allow_network_calls: true\n  provider: openrouter\n"
+        "  model: openrouter/deepseek/deepseek-v4-pro\n  api_key_env: TEST_CINEMA_KEY\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TEST_CINEMA_KEY", "secret")
+    screenshot = tmp_path / "shot.png"
+    screenshot.write_bytes(b"\x89PNG\r\n\x1a\n")
+    captured: dict = {}
+
+    def fake_complete(application, function, messages, **kwargs):
+        captured.update(
+            application=application,
+            function=function,
+            messages=messages,
+            kwargs=kwargs,
+        )
+        return type("Response", (), {"content": "vision-ok"})()
+
+    monkeypatch.setattr("nexu.cinema_llm._subllm_complete", lambda: fake_complete)
+    text, err = call_cinema_text_llm("describe", tmp_path, images=[str(screenshot)])
+    assert err is None
+    assert text == "vision-ok"
+    assert captured["application"] == "autogrammar-nexu"
+    assert captured["function"] == "vision"
+    content = captured["messages"][1]["content"]
+    assert content[0]["type"] == "image_url"
+    assert content[0]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert content[1] == {"type": "text", "text": "describe"}
+    assert captured["kwargs"]["credentials"] == {"openrouter": "secret"}
+
+
 def test_call_cinema_text_llm_returns_raw_content(monkeypatch, tmp_path: Path) -> None:
     (tmp_path / "nexu.yaml").write_text(
         "version: nexu.v1\nllm:\n  allow_network_calls: true\n  provider: openrouter\n"
