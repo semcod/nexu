@@ -249,7 +249,7 @@ def test_import_http_project_fetches_and_migrates(tmp_path: Path):
 
     with (
         patch("repatch.web_fetch._render_with_playwright", return_value=None),
-        patch("repatch.web_fetch.urlopen", side_effect=fake_urlopen),
+        patch("repatch.web_fetch._SAFE_OPENER.open", side_effect=fake_urlopen),
     ):
         result = import_http_project(cinema, "https://example.com/demo", allow_network=True)
 
@@ -393,7 +393,7 @@ def test_import_http_project_uses_rendered_dom_snapshot(tmp_path: Path):
             "repatch.web_fetch._render_with_playwright",
             return_value=(rendered, "https://example.com/app"),
         ),
-        patch("repatch.web_fetch.urlopen", side_effect=fake_urlopen),
+        patch("repatch.web_fetch._SAFE_OPENER.open", side_effect=fake_urlopen),
     ):
         result = import_http_project(cinema, "https://example.com/app", allow_network=True)
 
@@ -437,7 +437,7 @@ def test_activate_http_import_regenerates_preview_stage0(tmp_path: Path):
 
     with (
         patch("repatch.web_fetch._render_with_playwright", return_value=None),
-        patch("repatch.web_fetch.urlopen", return_value=FakeResp()),
+        patch("repatch.web_fetch._SAFE_OPENER.open", return_value=FakeResp()),
     ):
         imported = import_http_project(cinema, "https://example.org/", allow_network=True)
 
@@ -492,7 +492,7 @@ def test_activate_http_import_regenerates_preprocess_when_missing(tmp_path: Path
 
     with (
         patch("repatch.web_fetch._render_with_playwright", return_value=None),
-        patch("repatch.web_fetch.urlopen", return_value=FakeResp()),
+        patch("repatch.web_fetch._SAFE_OPENER.open", return_value=FakeResp()),
     ):
         imported = import_http_project(cinema, "https://legacy.example/", allow_network=True)
 
@@ -570,7 +570,7 @@ def test_activate_http_import_empty_subtitle_not_goal(tmp_path: Path):
 
     with (
         patch("repatch.web_fetch._render_with_playwright", return_value=None),
-        patch("repatch.web_fetch.urlopen", return_value=FakeResp()),
+        patch("repatch.web_fetch._SAFE_OPENER.open", return_value=FakeResp()),
     ):
         imported = import_http_project(cinema, "https://example.net/", allow_network=True)
 

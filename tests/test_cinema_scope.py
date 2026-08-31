@@ -187,7 +187,7 @@ def test_http_import_offline_colors_keeps_site_markers(tmp_path: Path, monkeypat
             return False
 
     monkeypatch.setattr(
-        "repatch.web_fetch.urlopen",
+        "repatch.web_fetch._SAFE_OPENER.open",
         lambda req, timeout=0: FakeResp(),
     )
     monkeypatch.setattr("repatch.web_fetch._render_with_playwright", lambda url: None)
