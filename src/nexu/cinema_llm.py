@@ -297,7 +297,7 @@ def call_cinema_text_llm(
         try:
             subllm_complete = _subllm_complete()
         except Exception:
-            return None, "Install subactor-subllm for Cinema vision"
+            return None, "Install nexu[vision] on Python 3.11+ for Cinema vision"
         try:
             user_content: list[dict[str, Any]] = [
                 {"type": "image_url", "image_url": {"url": _as_image_url(item, root)}}
