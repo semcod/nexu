@@ -35,6 +35,12 @@ def _litellm_completion():
     return _COMPLETION
 
 
+def _subllm_complete():
+    from subllm import complete as subllm_complete
+
+    return subllm_complete
+
+
 def _strip_markdown_fences(text: str) -> str:
     raw = str(text or "").strip()
     fence_match = re.search(r"```(?:html|HTML)?\s*\n([\s\S]*?)```", raw)
@@ -239,6 +245,23 @@ def _compact_response_preview(text: str, *, limit: int = 800) -> str:
     return compact[:limit]
 
 
+def _as_image_url(ref: str, root: Path) -> str:
+    value = str(ref or "").strip()
+    if value.startswith(("data:image/", "https://")):
+        return value
+    path = Path(value)
+    if not path.is_absolute():
+        path = root / path
+    if not path.is_file():
+        raise ValueError(f"vision image not found: {ref}")
+    suffix = path.suffix.lower().lstrip(".") or "png"
+    mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp"}.get(suffix, "png")
+    import base64
+
+    encoded = base64.standard_b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/{mime};base64,{encoded}"
+
+
 def call_cinema_text_llm(
     prompt: str,
     root: Path,
@@ -246,8 +269,9 @@ def call_cinema_text_llm(
     model: str | None = None,
     max_tokens: int = 20480,
     system_prompt: str | None = None,
+    images: list[str] | None = None,
 ) -> tuple[str | None, str | None]:
-    """Return raw LLM text content via LiteLLM/OpenRouter."""
+    """Return raw LLM text content via LiteLLM/OpenRouter or SubLLM vision."""
     try:
         config = _cached_config(root)
         llm = config.llm
@@ -268,6 +292,31 @@ def call_cinema_text_llm(
         "and <body>. Preserve existing DOM ids and calculator/dashboard structure. "
         "No markdown fences, no explanation."
     )
+    image_refs = [item for item in (images or []) if str(item).strip()]
+    if image_refs:
+        try:
+            subllm_complete = _subllm_complete()
+        except Exception:
+            return None, "Install nexu[vision] on Python 3.11+ for Cinema vision"
+        try:
+            user_content: list[dict[str, Any]] = [
+                {"type": "image_url", "image_url": {"url": _as_image_url(item, root)}}
+                for item in image_refs
+            ]
+            user_content.append({"type": "text", "text": prompt})
+            response = subllm_complete(
+                "autogrammar-nexu",
+                "vision",
+                [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_content},
+                ],
+                timeout_seconds=float(llm.timeout),
+                credentials={"openrouter": api_key},
+            )
+            return response.content, None
+        except Exception as exc:
+            return None, compact_llm_error(str(exc))
 
     try:
         completion = _litellm_completion()
@@ -302,17 +351,20 @@ def call_cinema_html_llm(
     model: str | None = None,
     max_tokens: int = 20480,
     ui_type: str = "web",
+    images: list[str] | None = None,
 ) -> tuple[str | None, str | None]:
     """
     Generate one complete HTML document via LiteLLM/OpenRouter.
 
     Returns (html, error). Uses nexu.yaml llm settings; no llx subprocess.
+    Image refs use the central SubLLM vision route.
     """
     content, err = call_cinema_text_llm(
         prompt,
         root,
         model=model,
         max_tokens=max_tokens,
+        images=images,
     )
     if err:
         return None, err

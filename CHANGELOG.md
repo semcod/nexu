@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- Cinema vision screenshots use SubLLM `autogrammar-nexu/vision`. YAML custom
+  text models stay on LiteLLM so existing model-override tests keep working.
 - `verify_capsule` now optionally runs `redup` (code duplication) and `vallm` (static
   code validation: syntax/imports/complexity, no LLM calls by default) against a
   capsule's source, via `RedupDuplicatesCheck`/`VallmValidationCheck`
