@@ -190,6 +190,10 @@ def test_http_import_offline_colors_keeps_site_markers(tmp_path: Path, monkeypat
         "repatch.web_fetch._SAFE_OPENER.open",
         lambda req, timeout=0: FakeResp(),
     )
+    monkeypatch.setattr(
+        "repatch.web_fetch.socket.getaddrinfo",
+        lambda host, port: [(None, None, None, None, ("93.184.216.34", 0))],
+    )
     monkeypatch.setattr("repatch.web_fetch._render_with_playwright", lambda url: None)
     imported = import_http_project(cinema, "https://malort.example/", allow_network=True)
     project_id = imported["project"]["id"]

@@ -493,6 +493,10 @@ def test_activate_http_import_regenerates_preprocess_when_missing(tmp_path: Path
     with (
         patch("repatch.web_fetch._render_with_playwright", return_value=None),
         patch("repatch.web_fetch._SAFE_OPENER.open", return_value=FakeResp()),
+        patch(
+            "repatch.web_fetch.socket.getaddrinfo",
+            return_value=[(None, None, None, None, ("93.184.216.34", 0))],
+        ),
     ):
         imported = import_http_project(cinema, "https://legacy.example/", allow_network=True)
 
